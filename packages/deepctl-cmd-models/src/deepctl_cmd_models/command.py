@@ -176,6 +176,7 @@ class ModelsCommand(BaseCommand):
                 )
                 table.add_column("Name", style="green")
                 table.add_column("Canonical name", style="green")
+                table.add_column("Architecture")
                 table.add_column("Type", style="cyan")
                 table.add_column("Languages")
                 table.add_column("Version")
@@ -188,6 +189,7 @@ class ModelsCommand(BaseCommand):
                     table.add_row(
                         display_name,
                         m.canonical_name,
+                        m.architecture,
                         m.model_type.upper(),
                         _format_languages(m.languages),
                         m.version,

@@ -166,9 +166,7 @@ class TestModelsCommand:
         assert result.status == "info"
         assert "No models found" in result.message
 
-    def test_handle_error(
-        self, command, mock_config, mock_auth_manager, mock_client
-    ):
+    def test_handle_error(self, command, mock_config, mock_auth_manager, mock_client):
         """Test client exception returns error status."""
         mock_client.list_models.side_effect = Exception("API connection failed")
 
@@ -388,6 +386,44 @@ class TestFieldMapping:
         assert tts.model_id == "6fe3f8e3-14d3-456c-9534-766132310608"
         assert tts.canonical_name == "aura-2-agathe-fr"
         assert tts.model_type == "tts"
+
+    @patch("deepctl_cmd_models.command.console")
+    @patch("deepctl_cmd_models.command.Table")
+    @patch("deepctl_cmd_models.command.get_output_format", return_value="default")
+    def test_default_table_includes_architecture(
+        self,
+        _fmt,
+        mock_table,
+        _console,
+        command,
+        mock_config,
+        mock_auth_manager,
+        mock_client,
+    ):
+        mock_client.list_models.return_value = {
+            "stt": [
+                {
+                    "uuid_": "u1",
+                    "name": "nova-3",
+                    "canonical_name": "nova-3-general",
+                    "architecture": "nova-3",
+                    "languages": ["en"],
+                }
+            ],
+            "tts": [],
+        }
+
+        command.handle(
+            config=mock_config,
+            auth_manager=mock_auth_manager,
+            client=mock_client,
+            type="stt",
+        )
+
+        mock_table.return_value.add_column.assert_any_call("Architecture")
+        mock_table.return_value.add_row.assert_called_once_with(
+            "nova-3", "nova-3-general", "nova-3", "STT", "en", "", "u1"
+        )
 
     def test_legacy_shape_still_maps(
         self, command, mock_config, mock_auth_manager, mock_client
