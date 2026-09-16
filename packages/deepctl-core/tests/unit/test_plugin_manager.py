@@ -618,9 +618,11 @@ class TestGlobalPassthroughOptions:
 
     The root group defines -o/--output, -q and -v, but Click only parses
     group options given before the subcommand, so `dg models -o json`
-    failed with "No such option '-o'". Every generated command now carries
+    failed with "No such option '-o'". Every leaf command now carries
     pass-through copies — except where the command defines the same option
-    itself (dg speak --output names an audio file).
+    itself (dg speak --output names an audio file). Groups retain their
+    original option handling because some nested commands write directly to
+    stdout and cannot guarantee structured output.
     """
 
     @pytest.fixture
@@ -691,8 +693,8 @@ class TestGlobalPassthroughOptions:
         assert not isinstance(output_params[0].type, click.Choice)
 
     @pytest.mark.unit
-    def test_output_option_added_to_group(self, plugin_manager):
-        """A group accepts global output options after its command name."""
+    def test_output_option_not_added_to_group(self, plugin_manager):
+        """Groups reject post-command output flags they cannot honor."""
         from click.testing import CliRunner
 
         group_class = self._make_group_command_class([])
@@ -700,8 +702,8 @@ class TestGlobalPassthroughOptions:
 
         result = CliRunner().invoke(group, ["-o", "json", "--help"])
 
-        assert result.exit_code == 0
-        assert "--output" in result.output
+        assert result.exit_code != 0
+        assert "No such option" in result.output
 
     @pytest.mark.unit
     def test_passthrough_output_applies_format(self, plugin_manager):

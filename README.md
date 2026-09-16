@@ -380,10 +380,10 @@ dg profiles --list                       # List profiles
 dg profiles --switch staging             # Switch profile
 ```
 
-For structured output, use `--output json|yaml|table|csv` after commands that
-do not define their own output option, or before the command as a global flag:
-`dg --output json <command>`. `dg speak --output FILE` writes audio to `FILE`,
-so use `dg --output json speak ...` for Speak's structured output.
+For structured output, use `--output json|yaml|table|csv` after leaf commands
+that do not define their own output option, or before any command as a global
+flag: `dg --output json <command>`. `dg speak --output FILE` writes audio to
+`FILE`, so use `dg --output json speak ...` for Speak's structured output.
 
 ## Telemetry
 
