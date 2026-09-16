@@ -466,7 +466,9 @@ class PluginManager:
         # Load subcommands for this group
         self._load_subcommands_for_group(group, group_instance)
 
-        return group
+        # Group commands need the same output-option placement support as leaf
+        # commands (for example, ``dg debug -o json network``).
+        return cast("click.Group", self._add_global_passthrough_options(group))
 
     def _load_subcommands_for_group(
         self, group: click.Group, group_instance: BaseGroupCommand

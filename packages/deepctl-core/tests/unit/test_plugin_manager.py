@@ -646,6 +646,16 @@ class TestGlobalPassthroughOptions:
 
         return PassthroughProbeCommand
 
+    def _make_group_command_class(self, arguments: list[dict[str, Any]]):
+        class PassthroughProbeGroup(BaseGroupCommand):
+            name = "probe-group"
+            help = "Probe group"
+
+            def get_arguments(self) -> list[dict[str, Any]]:
+                return arguments
+
+        return PassthroughProbeGroup
+
     @pytest.mark.unit
     def test_output_option_added_when_free(self, plugin_manager):
         """A command without its own -o/--output gets the pass-through."""
@@ -679,6 +689,19 @@ class TestGlobalPassthroughOptions:
         assert len(output_params) == 1
         # The command's own option takes a free-form string, not a Choice.
         assert not isinstance(output_params[0].type, click.Choice)
+
+    @pytest.mark.unit
+    def test_output_option_added_to_group(self, plugin_manager):
+        """A group accepts global output options after its command name."""
+        from click.testing import CliRunner
+
+        group_class = self._make_group_command_class([])
+        group = plugin_manager._create_click_command(group_class())
+
+        result = CliRunner().invoke(group, ["-o", "json", "--help"])
+
+        assert result.exit_code == 0
+        assert "--output" in result.output
 
     @pytest.mark.unit
     def test_passthrough_output_applies_format(self, plugin_manager):
