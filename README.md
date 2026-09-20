@@ -334,11 +334,8 @@ Note that `dg` reports `2` for an interrupt rather than the shell's
 conventional `130`, so the code is the same whether the cancellation came from
 Ctrl-C or from declining a prompt.
 
-Human-readable status and error messages go to stderr; stdout carries only the
-result, so `dg ... -o json | jq` stays parseable even when a command fails — a
-failure arrives there as a payload with `"status": "error"`. If a CI step
-relied on `dg` always exiting `0` (every command did, before 0.3.0), it will
-now fail where it previously passed silently.
+If a CI step relied on `dg` always exiting `0` (every command did, before
+0.3.0), it will now fail where it previously passed silently.
 
 ### Forcing non-interactive mode
 
