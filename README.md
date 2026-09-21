@@ -34,6 +34,8 @@ intelligence, and project management directly into your terminal. Aliases:
 
 ```bash
 brew tap deepgram/tap
+# Trust Deepgram's tap https://docs.brew.sh/Tap-Trust
+brew trust deepgram/tap
 brew install deepgram
 ```
 
