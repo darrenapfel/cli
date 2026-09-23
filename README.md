@@ -33,10 +33,8 @@ intelligence, and project management directly into your terminal. Aliases:
 **macOS / Linux (Homebrew):**
 
 ```bash
-brew tap deepgram/tap
-# Trust only the Deepgram formula https://docs.brew.sh/Tap-Trust
-brew trust --formula deepgram/tap/deepgram
-brew install deepgram
+# Install and trust only the Deepgram formula.
+brew install deepgram/tap/deepgram
 ```
 
 Homebrew brings in `ffmpeg` and `portaudio` automatically — `dg listen --mic`, `dg debug probe`, and raw audio piping all work without further setup. To upgrade later: `brew upgrade deepgram`.
