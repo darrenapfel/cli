@@ -474,8 +474,17 @@ class PluginCommand(BaseGroupCommand):
         package = kwargs["package"]
         yes = kwargs.get("yes", False)
 
-        if not yes and not click.confirm(f"Are you sure you want to remove {package}?"):
-            return
+        # err=True: the prompt is interaction, not output. Keeping it off
+        # stdout is what lets `dg plugin remove ... -o json` stay parseable,
+        # and matches the sibling prompt in deepctl-cmd-keys.
+        if not yes and not click.confirm(
+            f"Are you sure you want to remove {package}?", err=True
+        ):
+            # Abort rather than return: this is a group subcommand, so there is
+            # no result for BaseCommand.EXIT_CODES to map, and a bare return
+            # exits 0 -- indistinguishable from a successful removal. main.py
+            # turns Abort into the documented exit 2 for user cancellation.
+            raise click.Abort()
 
         result = self.remove_plugin(config, auth_manager, client, package)
 

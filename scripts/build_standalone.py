@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Build a standalone deepctl binary for testing system installations."""
 
-import os
+import importlib.util
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 
-def build_standalone():
+def build_standalone() -> None:
     """Build a standalone deepctl binary using PyInstaller."""
     # Check if we're in the right directory
     if not Path("pyproject.toml").exists():
@@ -18,9 +18,7 @@ def build_standalone():
     print("🔨 Building standalone deepctl binary...")
 
     # Install PyInstaller if needed
-    try:
-        import PyInstaller
-    except ImportError:
+    if importlib.util.find_spec("PyInstaller") is None:
         print("📦 Installing PyInstaller...")
         subprocess.run(
             [sys.executable, "-m", "pip", "install", "pyinstaller"], check=True
@@ -132,9 +130,7 @@ exe = EXE(
     print("   ./dist_standalone/deepctl plugin search")
     print("   ./dist_standalone/deepctl plugin install deepctl-plugin-example")
     print("\n💡 The standalone binary should detect as 'system' installation")
-    print(
-        "   and create an isolated plugin environment at ~/.deepctl/plugins/"
-    )
+    print("   and create an isolated plugin environment at ~/.deepctl/plugins/")
 
 
 if __name__ == "__main__":

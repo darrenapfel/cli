@@ -12,16 +12,17 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from typing import Any
 
-try:
+if sys.version_info >= (3, 11):
     import tomllib
-except ModuleNotFoundError:
+else:  # pragma: no cover - only taken on Python 3.10
     try:
-        import tomli as tomllib  # type: ignore[no-redef]
+        import tomli as tomllib
     except ModuleNotFoundError:
         print(
-            "Python 3.11+ required (tomllib), "
-            "or install tomli: pip install tomli"
+            "Python 3.11+ required (tomllib), or install tomli: pip install tomli",
+            file=sys.stderr,
         )
         sys.exit(1)
 
@@ -35,13 +36,14 @@ SKIP_PACKAGES: set[str] = set()
 INTERNAL_PREFIXES = ("deepctl-core", "deepctl-cmd-", "deepctl-shared-")
 
 
-def load_pyproject(package_dir: Path) -> dict:
+def load_pyproject(package_dir: Path) -> dict[str, Any]:
     """Load and return parsed pyproject.toml."""
     with open(package_dir / "pyproject.toml", "rb") as f:
-        return tomllib.load(f)
+        data: dict[str, Any] = tomllib.load(f)
+        return data
 
 
-def classify_package(name: str, data: dict) -> str:
+def classify_package(name: str, data: dict[str, Any]) -> str:
     """Classify a package as 'command', 'debug-subcommand', or 'core'."""
     if re.match(r"^deepctl-cmd-debug-.+$", name):
         return "debug-subcommand"
@@ -64,7 +66,7 @@ def get_external_deps(deps: list[str]) -> list[str]:
     return external
 
 
-def get_entry_points(data: dict) -> dict[str, str]:
+def get_entry_points(data: dict[str, Any]) -> dict[str, str]:
     """Extract command entry points from pyproject.toml."""
     entry_points = {}
     eps = data.get("project", {}).get("entry-points", {})
@@ -122,16 +124,15 @@ def render_extra_content(package_dir: Path) -> list[str]:
 def render_command_readme(
     name: str,
     description: str,
-    entry_points: dict,
-    external_deps: list,
+    entry_points: dict[str, str],
+    external_deps: list[str],
     package_dir: Path,
 ) -> str:
     """Render README for a command package (deepctl-cmd-*)."""
     lines = [
         f"# {name}",
         "",
-        "> Part of [deepctl](https://github.com/deepgram/cli)"
-        " — Official Deepgram CLI",
+        "> Part of [deepctl](https://github.com/deepgram/cli) — Official Deepgram CLI",
         "",
         description,
         "",
@@ -159,25 +160,22 @@ def render_command_readme(
     else:
         lines.append("No external dependencies.")
 
-    lines.extend(
-        ["", "## License", "", "MIT — see [LICENSE](../../LICENSE)", ""]
-    )
+    lines.extend(["", "## License", "", "MIT — see [LICENSE](../../LICENSE)", ""])
     return "\n".join(lines)
 
 
 def render_debug_subcommand_readme(
     name: str,
     description: str,
-    entry_points: dict,
-    external_deps: list,
+    entry_points: dict[str, str],
+    external_deps: list[str],
     package_dir: Path,
 ) -> str:
     """Render README for a debug subcommand package."""
     lines = [
         f"# {name}",
         "",
-        "> Part of [deepctl](https://github.com/deepgram/cli)"
-        " — Official Deepgram CLI",
+        "> Part of [deepctl](https://github.com/deepgram/cli) — Official Deepgram CLI",
         "",
         description,
         "",
@@ -207,24 +205,21 @@ def render_debug_subcommand_readme(
     else:
         lines.append("No external dependencies.")
 
-    lines.extend(
-        ["", "## License", "", "MIT — see [LICENSE](../../LICENSE)", ""]
-    )
+    lines.extend(["", "## License", "", "MIT — see [LICENSE](../../LICENSE)", ""])
     return "\n".join(lines)
 
 
 def render_core_readme(
     name: str,
     description: str,
-    external_deps: list,
+    external_deps: list[str],
     package_dir: Path,
 ) -> str:
     """Render README for a core/utility package."""
     lines = [
         f"# {name}",
         "",
-        "> Part of [deepctl](https://github.com/deepgram/cli)"
-        " — Official Deepgram CLI",
+        "> Part of [deepctl](https://github.com/deepgram/cli) — Official Deepgram CLI",
         "",
         description,
         "",
@@ -243,9 +238,7 @@ def render_core_readme(
     else:
         lines.append("No external dependencies.")
 
-    lines.extend(
-        ["", "## License", "", "MIT — see [LICENSE](../../LICENSE)", ""]
-    )
+    lines.extend(["", "## License", "", "MIT — see [LICENSE](../../LICENSE)", ""])
     return "\n".join(lines)
 
 
@@ -269,9 +262,7 @@ def generate_readme(package_dir: Path) -> str:
             name, description, entry_points, external_deps, package_dir
         )
     else:
-        return render_core_readme(
-            name, description, external_deps, package_dir
-        )
+        return render_core_readme(name, description, external_deps, package_dir)
 
 
 def get_package_dirs(single: str | None = None) -> list[Path]:
@@ -294,7 +285,7 @@ def get_package_dirs(single: str | None = None) -> list[Path]:
 # ── Root README section generators ──────────────────────────────
 
 
-def get_all_packages() -> list[dict]:
+def get_all_packages() -> list[dict[str, Any]]:
     """Load metadata for all packages in the workspace."""
     packages = []
     for pkg_dir in sorted(PACKAGES_DIR.iterdir()):
@@ -307,19 +298,15 @@ def get_all_packages() -> list[dict]:
             {
                 "dir_name": pkg_dir.name,
                 "name": project["name"],
-                "description": project.get(
-                    "description", project["name"]
-                ),
+                "description": project.get("description", project["name"]),
                 "commands": eps.get("deepctl.commands", {}),
-                "debug_subcommands": eps.get(
-                    "deepctl.subcommands.debug", {}
-                ),
+                "debug_subcommands": eps.get("deepctl.subcommands.debug", {}),
             }
         )
     return packages
 
 
-def generate_commands_section(packages: list[dict]) -> str:
+def generate_commands_section(packages: list[dict[str, Any]]) -> str:
     """Generate the commands markdown table."""
     rows = []
     for pkg in packages:
@@ -328,9 +315,7 @@ def generate_commands_section(packages: list[dict]) -> str:
         for cmd_name in pkg["commands"]:
             rows.append((f"`deepctl {cmd_name}`", pkg["description"]))
         for cmd_name in pkg["debug_subcommands"]:
-            rows.append(
-                (f"`deepctl debug {cmd_name}`", pkg["description"])
-            )
+            rows.append((f"`deepctl debug {cmd_name}`", pkg["description"]))
     rows.sort(key=lambda r: r[0])
     lines = [
         "| Command | Description |",
@@ -341,7 +326,7 @@ def generate_commands_section(packages: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def generate_packages_section(packages: list[dict]) -> str:
+def generate_packages_section(packages: list[dict[str, Any]]) -> str:
     """Generate the packages markdown table."""
     lines = [
         "| Package | Description |",
@@ -349,13 +334,12 @@ def generate_packages_section(packages: list[dict]) -> str:
     ]
     for pkg in sorted(packages, key=lambda p: p["name"]):
         lines.append(
-            f"| [`{pkg['name']}`](packages/{pkg['dir_name']})"
-            f" | {pkg['description']} |"
+            f"| [`{pkg['name']}`](packages/{pkg['dir_name']}) | {pkg['description']} |"
         )
     return "\n".join(lines)
 
 
-def generate_architecture_section(packages: list[dict]) -> str:
+def generate_architecture_section(packages: list[dict[str, Any]]) -> str:
     """Generate the ASCII architecture tree."""
     comment_col = 38
 
@@ -365,9 +349,7 @@ def generate_architecture_section(packages: list[dict]) -> str:
         return f"{line}{' ' * padding}# {desc}"
 
     lines = ["```", "cli/"]
-    lines.append(
-        tree_line("├── ", "src/deepctl/", "Main CLI entry point")
-    )
+    lines.append(tree_line("├── ", "src/deepctl/", "Main CLI entry point"))
     lines.append("├── packages/")
 
     sorted_pkgs = sorted(packages, key=lambda p: p["dir_name"])
@@ -382,19 +364,13 @@ def generate_architecture_section(packages: list[dict]) -> str:
             )
         )
 
-    lines.append(
-        tree_line("├── ", "tests/", "Integration tests")
-    )
-    lines.append(
-        tree_line("└── ", "Makefile", "Development tasks")
-    )
+    lines.append(tree_line("├── ", "tests/", "Integration tests"))
+    lines.append(tree_line("└── ", "Makefile", "Development tasks"))
     lines.append("```")
     return "\n".join(lines)
 
 
-def replace_section(
-    content: str, section: str, replacement: str
-) -> str:
+def replace_section(content: str, section: str, replacement: str) -> str:
     """Replace content between BEGIN:section and END:section markers."""
     pattern = re.compile(
         rf"(<!-- BEGIN:{re.escape(section)} -->\n)"
@@ -403,15 +379,15 @@ def replace_section(
         re.DOTALL,
     )
 
-    def repl(m: re.Match) -> str:
-        return m.group(1) + replacement + "\n" + m.group(2)
+    def repl(m: re.Match[str]) -> str:
+        begin: str = m.group(1)
+        end: str = m.group(2)
+        return begin + replacement + "\n" + end
 
     return pattern.sub(repl, content)
 
 
-def update_root_readme(
-    *, dry_run: bool = False, check: bool = False
-) -> bool:
+def update_root_readme(*, dry_run: bool = False, check: bool = False) -> bool:
     """Update auto-generated sections in the root README.md.
 
     Returns True if the file was (or needs to be) changed.
@@ -452,7 +428,7 @@ def update_root_readme(
     return True
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Generate README files from pyproject.toml metadata"
     )
@@ -506,9 +482,7 @@ def main():
 
     # Update root README sections (skip when targeting a single package)
     if not args.package:
-        root_changed = update_root_readme(
-            dry_run=args.dry_run, check=args.check
-        )
+        root_changed = update_root_readme(dry_run=args.dry_run, check=args.check)
         if root_changed:
             stale.append("README.md")
 
@@ -522,10 +496,7 @@ def main():
     if not args.check and not args.dry_run:
         total = len(package_dirs) + (0 if args.package else 1)
         updated = len(stale)
-        print(
-            f"\nDone: {updated} updated, "
-            f"{total - updated} already current"
-        )
+        print(f"\nDone: {updated} updated, {total - updated} already current")
 
 
 if __name__ == "__main__":

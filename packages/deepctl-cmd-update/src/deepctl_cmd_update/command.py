@@ -69,8 +69,16 @@ class UpdateCommand(BaseCommand):
         auth_manager: Any,  # Not used for update command
         client: Any,  # Not used for update command
         **kwargs: Any,
-    ) -> dict[str, Any]:
-        """Handle the update command execution."""
+    ) -> UpdateResult | dict[str, Any]:
+        """Handle the update command execution.
+
+        Returns the model rather than a dict wherever the exit code has to
+        be non-zero: BaseCommand.exit_code_for reads `.status` off the
+        result, and a dict has none, so a dict always exits 0. The three
+        failure paths carry status="error" (exit 1) and the decline path
+        status="cancelled" (exit 2). output_result unwraps either, so the
+        JSON payload is the same shape from both.
+        """
         console = get_console()
 
         # Extract arguments from kwargs
@@ -93,10 +101,13 @@ class UpdateCommand(BaseCommand):
                 version_info = asyncio.run(version_checker.check_version(force=True))
             except Exception as e:
                 print_error(f"Failed to check for updates: {e}")
+                # status="error" on the model, not a dict: see the docstring.
+                # A command that failed has to exit 1, as the README says.
                 return UpdateResult(
+                    status="error",
                     success=False,
                     message=f"Failed to check for updates: {e}",
-                ).model_dump()
+                )
 
         # Display version info
         message = format_version_message(version_info)
@@ -167,14 +178,20 @@ class UpdateCommand(BaseCommand):
         # Confirm update
         if not yes and not Confirm.ask("\nDo you want to proceed with the update?"):
             print_info("Update cancelled")
+            # Return the model, not .model_dump(): BaseCommand.exit_code_for
+            # reads `.status` off the result, and a plain dict has none -- a
+            # declined update used to exit 0 while its own payload said
+            # "Update cancelled by user". status="cancelled" is the documented
+            # exit 2.
             return UpdateResult(
+                status="cancelled",
                 success=False,
                 message="Update cancelled by user",
                 current_version=version_info.current_version,
                 latest_version=version_info.latest_version,
                 update_available=version_info.update_available,
                 installation_method=install_info.method.value,
-            ).model_dump()
+            )
 
             # Execute update
         print_info("Updating deepctl...")
@@ -212,13 +229,14 @@ class UpdateCommand(BaseCommand):
                 console.print(f"[yellow]{shlex.join(update_command)}[/yellow]")
 
                 return UpdateResult(
+                    status="error",
                     success=False,
                     message=f"Update failed: {error_msg}",
                     current_version=version_info.current_version,
                     latest_version=version_info.latest_version,
                     update_available=version_info.update_available,
                     installation_method=install_info.method.value,
-                ).model_dump()
+                )
 
         except Exception as e:
             print_error(f"Failed to execute update: {e}")
@@ -228,10 +246,11 @@ class UpdateCommand(BaseCommand):
             console.print(f"[yellow]{update_command}[/yellow]")
 
             return UpdateResult(
+                status="error",
                 success=False,
                 message=f"Failed to execute update: {e}",
                 current_version=version_info.current_version,
                 latest_version=version_info.latest_version,
                 update_available=version_info.update_available,
                 installation_method=install_info.method.value,
-            ).model_dump()
+            )

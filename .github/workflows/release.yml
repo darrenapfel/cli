@@ -17,6 +17,8 @@ jobs:
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
+      prs_created: ${{ steps.release.outputs.prs_created }}
+      pr: ${{ steps.release.outputs.pr }}
     steps:
       - uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38  # v4
         id: release
@@ -24,6 +26,64 @@ jobs:
           token: ${{ github.token }}
           config-file: .github/release-please-config.json
           manifest-file: .github/.release-please-manifest.json
+
+  sync-release-pr:
+    name: Sync lockfile and floors on the release PR
+    needs: release-please
+    if: ${{ needs.release-please.outputs.prs_created == 'true' && needs.release-please.outputs.pr }}
+    runs-on: ubuntu-latest
+    # This job pushes to the release branch. Two commits landing on main in
+    # quick succession would otherwise run two of these against the same
+    # branch and the loser fails on a non-fast-forward push, reddening the
+    # release workflow for no real reason. Serialize instead of cancelling:
+    # the second run still has work to do once the first one's commit lands.
+    concurrency:
+      group: sync-release-pr
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          ref: ${{ fromJSON(needs.release-please.outputs.pr).headBranchName }}
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
+
+      # release-please bumps every pyproject version but updates neither
+      # uv.lock (CI's `uv sync --locked` then fails all jobs at the install
+      # step -- the 0.2.28/0.3.0 wall, twice) nor the root dependency floors
+      # (without which `dg update` on pip delivers the wrapper and skips the
+      # sub-packages the changelog advertises). Both are mechanical
+      # consequences of the version bumps, so regenerate them here.
+      #
+      # Caveat: this push uses GITHUB_TOKEN, which does not retrigger the
+      # PR's checks. The routine hand-edit of the release notes retriggers
+      # them; for an untouched release PR, re-run checks from the UI. If
+      # releases ever need to go out unattended, switch this push to a
+      # dedicated PAT or GitHub App token.
+      - name: Regenerate uv.lock and pin root floors
+        run: |
+          set -euo pipefail
+          uv run python scripts/check_dependency_floors.py --fix
+          uv lock
+          uv run python scripts/check_dependency_floors.py
+
+      - name: Commit and push if changed
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "uv.lock and floors already in sync"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add uv.lock pyproject.toml
+          git commit -m "chore: sync uv.lock and root dependency floors with release-please bumps"
+          git push
 
   build:
     name: Build packages
@@ -77,9 +137,85 @@ jobs:
           pip install --find-links "$DIST_DIR" dist/deepctl-*.whl
           deepctl --version
 
+  verify-published:
+    name: Verify release is installable from PyPI
+    needs: [release-please, publish]
+    # `pip install deepctl==X` must resolve the full dependency closure from
+    # PyPI before anything advertises the release. Two real failure modes:
+    # 0.2.27 published partially (root uninstallable, and pip *silently
+    # backtracks* to the previous version, exit 0), and the 0.3.0 rollout
+    # showed a fresh install backtracking to 0.2.26 during the CDN
+    # propagation window. Poll the actual resolver, not just the JSON
+    # endpoint, so mark-latest / deploy-web / brew never point at a version
+    # a user cannot install.
+    if: |
+      needs.release-please.outputs.release_created == 'true' &&
+      startsWith(needs.release-please.outputs.tag_name, 'v')
+    runs-on: ubuntu-latest
+    # Reads nothing and writes nothing: it installs from public PyPI. Drop the
+    # workflow-level contents/pull-requests write it would otherwise inherit.
+    permissions: {}
+    # Belt-and-braces ceiling for a hung runner or a wedged pip, so three
+    # release-advertising jobs can never sit queued behind this one
+    # indefinitely. It has to clear the poll's own worst case, which is 20
+    # minutes of sleeps *plus* 60 resolution attempts -- a ceiling that cuts
+    # the loop short would kill the job before it prints the diagnosis below.
+    timeout-minutes: 45
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: "3.12"
+
+      # Poll with --dry-run: it stops after resolution, which is cheap and is
+      # exactly what distinguishes "not propagated yet" from "broken".
+      - name: Wait until pip can resolve the full release
+        run: |
+          set -euo pipefail
+          VERSION="${TAG_NAME#v}"
+          python -m venv /tmp/verify
+          /tmp/verify/bin/pip install --quiet --upgrade pip
+          # The loop exits the moment resolution succeeds, so the ceiling only
+          # costs anything when it is actually hit. Propagation is normally
+          # seconds; 20 minutes is insurance, not an expected wait.
+          for i in $(seq 1 60); do
+            if /tmp/verify/bin/pip install --dry-run --no-cache-dir \
+                "deepctl==${VERSION}" >/dev/null 2>&1; then
+              echo "deepctl==${VERSION} resolves with its full closure"
+              exit 0
+            fi
+            echo "Waiting for deepctl==${VERSION} to resolve (${i}/60)..."
+            sleep 20
+          done
+          # Every attempt above discarded its output, so the operator would
+          # otherwise get a bare error line and have to reproduce by hand.
+          # Run once more with the output visible: pip's resolver says which
+          # requirement it could not satisfy.
+          echo "Resolution still failing. Final attempt, with output:"
+          /tmp/verify/bin/pip install --dry-run --no-cache-dir "deepctl==${VERSION}" || true
+          echo "::error::deepctl==${VERSION} did not resolve from PyPI after 20 minutes -- a dependency is missing or the index has not propagated. Once PyPI has propagated, use 'Re-run all jobs' on this workflow run -- re-running only this job leaves mark-latest, deploy-web and bump-brew-formula skipped. Re-running all jobs is safe: the PyPI publish step uses skip-existing."
+          exit 1
+        env:
+          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+
+      # Resolving is not installing. --dry-run is satisfied by PyPI metadata
+      # (often via PEP 658, without fetching a single wheel), so a corrupt
+      # artifact or an entry point that cannot import still passes it. The
+      # build job smoke-tests `deepctl --version`, but against the local
+      # dist/ artifacts -- this is the only check against what PyPI serves,
+      # and it is the last gate before three jobs advertise the release.
+      - name: Install for real and run the CLI
+        run: |
+          set -euo pipefail
+          VERSION="${TAG_NAME#v}"
+          /tmp/verify/bin/pip install --quiet --no-cache-dir "deepctl==${VERSION}"
+          /tmp/verify/bin/deepctl --version
+        env:
+          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+
   mark-latest:
     name: Mark root release as latest
-    needs: [release-please, publish]
+    needs: [release-please, publish, verify-published]
     # Re-assert latest on the root package tag (vX.Y.Z) after PyPI publish so
     # users clicking "latest" land on a tag whose artifact is actually
     # installable. Also re-asserts after all sub-package releases since
@@ -97,7 +233,7 @@ jobs:
 
   deploy-web:
     name: Deploy web to production
-    needs: [release-please, publish]
+    needs: [release-please, publish, verify-published]
     # Only fire on root-package releases (v0.2.4, v1.0.0, …) and only after
     # PyPI publish so cli.deepgram.com never advertises a version that isn't
     # installable yet. Sub-package tags look like deepctl-cmd-listen-v0.0.3 —
@@ -128,7 +264,7 @@ jobs:
 
   bump-brew-formula:
     name: Bump Homebrew formula
-    needs: [release-please, publish]
+    needs: [release-please, publish, verify-published]
     # Only fire on root-package releases (v0.2.4, v1.0.0, …).
     # Sub-package tags look like deepctl-cmd-listen-v0.0.3 — skip those.
     if: |
@@ -143,27 +279,10 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Wait for new deepctl version on PyPI
-        run: |
-          set -euo pipefail
-          VERSION="${TAG_NAME#v}"
-          # Poll the PyPI JSON API rather than `pip index versions`. The
-          # JSON endpoint flips the moment a release is published, while
-          # the simple index pip queries can lag 5-15 minutes behind a
-          # successful publish (CDN caching of project metadata).
-          URL="https://pypi.org/pypi/deepctl/${VERSION}/json"
-          for i in $(seq 1 30); do
-            if [ "$(curl -fsS -o /dev/null -w '%{http_code}' "${URL}")" = "200" ]; then
-              echo "deepctl==${VERSION} is live on PyPI"
-              exit 0
-            fi
-            echo "Waiting for deepctl==${VERSION} on PyPI (${i}/30)..."
-            sleep 20
-          done
-          echo "::error::deepctl==${VERSION} did not appear on PyPI after 10 minutes"
-          exit 1
-        env:
-          TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+      # No PyPI poll here: verify-published is in `needs`, and it does not
+      # finish until `pip install deepctl==X` resolves its full closure and
+      # the installed CLI runs. A second, weaker poll behind that gate can
+      # only cost time.
 
       - name: Checkout homebrew-tap
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4

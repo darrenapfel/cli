@@ -38,21 +38,21 @@ dependencies = [
     "deepctl-core>=0.2.16",
     "deepctl-cmd-login>=0.1.17",
     "deepctl-cmd-projects>=0.2.0",
-    "deepctl-cmd-transcribe>=0.1.10",
+    "deepctl-cmd-transcribe>=0.1.12",
     "deepctl-cmd-usage>=0.2.0",
     "deepctl-cmd-mcp>=0.1.15",
-    "deepctl-cmd-api>=0.0.1",
-    "deepctl-cmd-debug>=0.1.10",
-    "deepctl-cmd-debug-browser>=0.1.10",
-    "deepctl-cmd-debug-network>=0.1.10",
-    "deepctl-cmd-debug-audio>=0.1.10",
-    "deepctl-cmd-debug-probe>=0.0.1",
-    "deepctl-cmd-debug-toolkit>=0.0.1",
-    "deepctl-cmd-ffprobe>=0.0.1",
+    "deepctl-cmd-api>=0.0.2",
+    "deepctl-cmd-debug>=0.1.12",
+    "deepctl-cmd-debug-browser>=0.1.12",
+    "deepctl-cmd-debug-network>=0.1.12",
+    "deepctl-cmd-debug-audio>=0.1.13",
+    "deepctl-cmd-debug-probe>=0.0.2",
+    "deepctl-cmd-debug-toolkit>=0.1.0",
+    "deepctl-cmd-ffprobe>=0.0.2",
     "deepctl-cmd-update>=0.2.6",
-    "deepctl-cmd-plugin>=0.1.10",
+    "deepctl-cmd-plugin>=0.1.12",
     "deepctl-cmd-skills>=0.0.7",
-    "deepctl-cmd-init>=0.0.1",
+    "deepctl-cmd-init>=0.0.4",
     "deepctl-cmd-models>=0.1.0",
     "deepctl-cmd-speak>=0.0.4",
     "deepctl-cmd-keys>=0.1.0",
@@ -61,8 +61,8 @@ dependencies = [
     "deepctl-cmd-requests>=0.1.0",
     "deepctl-cmd-billing>=0.1.0",
     "deepctl-cmd-members>=0.1.0",
-    "deepctl-cmd-completion>=0.0.1",
-    "deepctl-shared-utils>=0.1.10",
+    "deepctl-cmd-completion>=0.0.3",
+    "deepctl-shared-utils>=0.1.12",
     "deepctl-telemetry>=0.0.6",
     "pydantic>=2.0.0",
     "rich>=13.0.0",
@@ -87,6 +87,7 @@ dev = [
     # Code Quality
     "ruff>=0.8.0",
     "mypy>=1.0.0",
+    "packaging>=23.0",
     # Type Stubs
     "types-PyYAML>=6.0.0",
     "types-requests>=2.31.0",
@@ -128,7 +129,13 @@ include = ["deepctl*"]
 [tool.mypy]
 python_version = "3.10"
 strict = true
-files = "src/,packages/*/src"
+files = "src/,packages/*/src,scripts/"
+
+[[tool.mypy.overrides]]
+module = ["tomli"]
+# The pre-3.11 fallback for tomllib in scripts/. It is not installed, and
+# mypy checks that branch because python_version is pinned to 3.10.
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "deepctl_cmd_mcp.*"
@@ -232,6 +239,10 @@ members = ["packages/*"]
 [dependency-groups]
 testing = [
     "pytest>=7.0.0",
+    # scripts/check_dependency_floors.py reads pyproject files; on 3.10 it
+    # falls back to tomli, and tests/unit/test_dependency_floors.py drives
+    # the real script on every version in the CI matrix.
+    "tomli>=2.0; python_version < '3.11'",
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.0.0",
     "pytest-mock>=3.10.0",
@@ -244,6 +255,9 @@ dev = [
     # Code Quality
     "ruff>=0.8.0",
     "mypy>=1.0.0",
+    # PEP 440 comparisons in scripts/check_dependency_floors.py. Declared
+    # rather than leaned on as a transitive of build/twine.
+    "packaging>=23.0",
     # Type Stubs
     "types-pyyaml>=6.0.12.20250516",
     "types-requests>=2.32.4.20250611",
